@@ -12,7 +12,9 @@ class CollisionCallback(Box2D.b2ContactListener):
 	"""Used to listen for collisions.
 	
 	Appends the userdata off both bodies to for_objects.collisions, or removes them when they no longer touch.
-	it as assumed that for_object.collisions is a set."""
+	it is assumed that for_object.collisions is a dict.  The keys are tuples of touching items and the values the approximate position of the collision.
+	
+	for_object.per_tick_collisions is the same, but is not automatically cleared; use it to detect that something happened, rather than that something is happening."""
 	
 	def __init__(self, for_object):
 		super(CollisionCallback, self).__init__()
@@ -22,18 +24,15 @@ class CollisionCallback(Box2D.b2ContactListener):
 		a, b=contact.fixtureA.body.userData, contact.fixtureB.body.userData
 		if a > b:
 			a, b = b, a
-		print "Touching:", a, b
-		self.for_object.collisions.add((a, b))
+		self.for_object.collisions[(a, b)] = contact.worldManifold.points[0]
+		self.for_object.per_tick_collisions[(a, b)] = contact.worldManifold.points[0]
 
 	def EndContact(self, contact):
 		a, b = contact.fixtureA.body.userData, contact.fixtureB.body.userData
 		if a > b:
 			a, b = b, a
 		if (a, b) in self.for_object.collisions:
-			self.for_object.collisions.remove((a, b))
-		print "Not touching:", a, b
-
-
+			del self.for_object.collisions[(a, b)]
 
 class GameBoard(object):
 	"""The game board: manages physics and simulation.
@@ -83,7 +82,9 @@ class GameBoard(object):
 		self.upper_dead_zone = physics_helper.create_body(self.world, shape_type = Box2D.b2PolygonShape, user_data = ObjectTypes.upper_dead_zone, is_sensor = True, body_type = Box2D.b2_staticBody,
 		position = (0, board_height/2-dead_zone_height/2), vertices = physics_helper.box_vertices(board_width/2, dead_zone_height/2))
 		self.ball = None
-		self.collisions =set()
+		#See the CollisionCallback class docstring for these two.
+		self.collisions =dict()
+		self.per_tick_collisions = dict()
 		self.collision_callback = CollisionCallback(self)
 		self.world.contactListener = self.collision_callback
 
@@ -99,5 +100,7 @@ class GameBoard(object):
 		"""Advances time by 1/60.0.
 		
 		This is not configurable; box2d steps have to be small."""
+		#collisions is used to record ongoing; per_tick_collisions records all touches in one tick.
+		self.per_tick_collisions.clear()
 		#Parameters:time, iterations for velocity, iterations for position.
 		self.world.Step(1/60.0, 10, 10)
