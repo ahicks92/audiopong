@@ -1,10 +1,38 @@
 from __future__ import division
 import Box2D
 import enum
+from . import physics_helper
 
 #There are a very limited number of objects in this game, so we can just use an enum.
 #Other game tuypes need more stuff, so this would often be classes.
-ObjectTypes = enum.Enum('ObjectTypes', 'ball lower_paddle upper_paddle border lower_dead_zone upper_dead_zone')
+ObjectTypes = enum.IntEnum('ObjectTypes', 'ball lower_paddle upper_paddle border lower_dead_zone upper_dead_zone')
+
+#This class allows us to detect collisions. With it, we can build a list.
+class CollisionCallback(Box2D.b2ContactListener):
+	"""Used to listen for collisions.
+	
+	Appends the userdata off both bodies to for_objects.collisions, or removes them when they no longer touch.
+	it as assumed that for_object.collisions is a set."""
+	
+	def __init__(self, for_object):
+		super(CollisionCallback, self).__init__()
+		self.for_object=for_object
+
+	def BeginContact(self, contact):
+		a, b=contact.fixtureA.body.userData, contact.fixtureB.body.userData
+		if a > b:
+			a, b = b, a
+		print "Touching:", a, b
+		self.for_object.collisions.add((a, b))
+
+	def EndContact(self, contact):
+		a, b = contact.fixtureA.body.userData, contact.fixtureB.body.userData
+		if a > b:
+			a, b = b, a
+		if (a, b) in self.for_object.collisions:
+			self.for_object.collisions.remove((a, b))
+		print "Not touching:", a, b
+
 
 
 class GameBoard(object):
@@ -22,13 +50,14 @@ class GameBoard(object):
 		self.paddle_width = paddle_width
 		self.paddle_height = paddle_height
 		self.dead_zone_height = dead_zone_height
-		self.paddle_width = paddle_width
-		self.paddle_height = paddle_height
 		self.ball_radius = ball_radius
 		#Set up the physics.
 		#This stuff never changes.
 		self.world = Box2D.b2World()
+		#No gravity.
+		self.world.gravity = (0, 0)
 		#Must be in counterclockwise ordering.
+		#these are set up so that the position of the paddle is relative to its back.
 		self.lower_paddle_vertices = [(-paddle_width/2, 0), (paddle_width/2, 0), (0, paddle_height)]
 		#The other paddle is made by flipping the lower one.
 		self.upper_paddle_vertices = [(i[0], -i[1]) for i in self.lower_paddle_vertices]
@@ -39,76 +68,36 @@ class GameBoard(object):
 		#This constant is here for convenience.
 		#Balls are handled in spawn_ball, which should be called by user code; you can safely have more than one, but usually won't.
 		self.center = (0, 0)
-		self.border_vertices = [(-board_width/2, -board_height/2), (board_width/2, -board_height/2), (board_width/2, board_height/2), (-board_width/2, board_height/2)]
-		#first, build the paddle shapes.
-		self.lower_paddle_shape = Box2D.b2PolygonShape(vertices = self.lower_paddle_vertices)
-		self.upper_paddle_shape = Box2D.b2PolygonShape(vertices = self.upper_paddle_vertices)
-		#The dead zones are boxes.
-		self.lower_dead_zone_shape = Box2D.b2PolygonShape()
-		self.lower_dead_zone_shape.SetAsBox(board_width/2, dead_zone_height/2)
-		self.upper_dead_zone_shape = Box2D.b2PolygonShape()
-		self.upper_dead_zone_shape.SetAsBox(board_width/2, dead_zone_height/2)
-		#The border:
-		self.border_shape = Box2D.b2ChainShape()
-		#Vertices can only be replaced, don't try to modify this list. Annoying bug in Box2D bindings.
-		self.border_shape.vertices_loop = self.border_vertices
-		#Box2D makes bodies from body definitions, we do these here.
-		#Everything gets a fixture definition, named with _fixture.
-		self.lower_paddle_fixture = Box2D.b2FixtureDef()
-		self.upper_paddle_fixture = Box2D.b2FixtureDef()
-		self.lower_dead_zone_fixture = Box2D.b2FixtureDef()
-		self.upper_dead_zone_fixture = Box2D.b2FixtureDef()
-		self.border_fixture = Box2D.b2FixtureDef()
-		#Wire up the shapes:
-		self.border_fixture.shape = self.border_shape
-		self.lower_paddle_fixture.shape = self.lower_paddle_shape
-		self.upper_paddle_fixture.shape = self.upper_paddle_shape
-		self.lower_dead_zone_fixture.shape = self.lower_dead_zone_shape
-		self.upper_dead_zone_fixture.shape = self.upper_dead_zone_shape
-		#Clear frictions:
-		self.lower_paddle_fixture.friction = 0
-		self.upper_paddle_fixture.friction = 0
-		self.border_fixture.friction = 0
-		#The dead zones are sensors:
-		self.lower_dead_zone_fixture.isSensor = True
-		self.upper_dead_zone_fixture.isSensor = True
-		#We can now create the bodies for everything permanent; we avoid the ball.
-		#Box2D invalidates the associated shapes when a body is destroyed, and balls are destroyed when they hit the dead zone.
-		#Since this is swig, best to avoid.
-		self.lower_paddle_def = Box2D.b2BodyDef()
-		self.upper_paddle_def = Box2D.b2BodyDef()
-		self.lower_dead_zone_def = Box2D.b2BodyDef()
-		self.upper_dead_zone_def = Box2D.b2BodyDef()
-		self.border_def = Box2D.b2BodyDef()
-		#Static bodies are bodies which do not move, ever, the end:
-		self.border_def.type = Box2D.b2_staticBody
-		self.lower_dead_zone_def.type = Box2D.b2_staticBody
-		self.upper_dead_zone_def.type = Box2D.b2_staticBody
-		#Kinematic bodies are manipulated by us. We can set the velocity, but they won't be affected by forces.
-		self.lower_paddle_def.type = Box2D.b2_kinematicBody
-		self.upper_paddle_def.type = Box2D.b2_kinematicBody
-		#The position of the lower paddle is just above the lower dead zone; the upper paddle, just below the upper dead zone.
-		#Positions are relative to the back of the paddle.
-		self.lower_paddle_def.position = (0.0, -board_height/2+dead_zone_height)
-		self.upper_paddle_def.position = (0.0, board_height/2-dead_zone_height)
-		#The positions of the dead zones is relative to their centers.
-		self.lower_dead_zone_def.position = (0.0, -board_height/2+dead_zone_height/2)
-		self.upper_dead_zone_def.position = (0.0, board_height/2-dead_zone_height/2)
-		#We finally make the calls to create the bodies.
-		self.border = self.world.CreateBody(self.border_def)
-		self.lower_paddle = self.world.CreateBody(self.lower_paddle_def)
-		self.upper_paddle = self.world.CreateBody(self.upper_paddle_def)
-		self.lower_dead_zone = self.world.CreateBody(self.lower_dead_zone_def)
-		self.upper_dead_zone = self.world.CreateBody(self.upper_dead_zone_def)
-		self.border.CreateFixture(self.border_fixture)
-		self.lower_dead_zone.CreateFixture(self.lower_dead_zone_fixture)
-		self.upper_dead_zone.CreateFixture(self.upper_dead_zone_fixture)
-		self.lower_paddle.CreateFixture(self.lower_paddle_fixture)
-		self.upper_paddle.CreateFixture(self.upper_paddle_fixture)
-		#Finally, tag objects with their types, so we can tell them apart.
-		self.border.userData = ObjectTypes.border
-		self.upper_paddle.userData = ObjectTypes.upper_paddle
-		self.lower_paddle.userData = ObjectTypes.lower_paddle
-		self.lower_dead_zone.userData = ObjectTypes.lower_dead_zone
-		self.upper_dead_zone.userData = ObjectTypes.upper_dead_zone
+		self.border = physics_helper.create_body(self.world, shape_type = Box2D.b2ChainShape, body_type = Box2D.b2_staticBody, user_data = ObjectTypes.border,
+		vertices = physics_helper.box_vertices(board_width/2, board_height/2),
+		restitution = 1)
+		self.upper_paddle = physics_helper.create_body(self.world, shape_type = Box2D.b2PolygonShape, friction = 0, body_type = Box2D.b2_kinematicBody,
+		user_data = ObjectTypes.upper_paddle, vertices = self.upper_paddle_vertices,
+		position = (0, board_height/2-dead_zone_height),
+		restitution = 1)
+		self.lower_paddle = physics_helper.create_body(self.world, shape_type = Box2D.b2PolygonShape, body_type = Box2D.b2_kinematicBody, user_data = ObjectTypes.lower_paddle,
+		vertices = self.lower_paddle_vertices, friction = 0, position = (0, -board_height/2+dead_zone_height),
+		restitution = 1)
+		self.lower_dead_zone = physics_helper.create_body(self.world, shape_type = Box2D.b2PolygonShape, is_sensor = True, friction = 0, body_type = Box2D.b2_staticBody, user_data = ObjectTypes.lower_dead_zone,
+		position = (0.0, -board_height/2+dead_zone_height/2), vertices = physics_helper.box_vertices(board_width/2, dead_zone_height/2))
+		self.upper_dead_zone = physics_helper.create_body(self.world, shape_type = Box2D.b2PolygonShape, user_data = ObjectTypes.upper_dead_zone, is_sensor = True, body_type = Box2D.b2_staticBody,
+		position = (0, board_height/2-dead_zone_height/2), vertices = physics_helper.box_vertices(board_width/2, dead_zone_height/2))
+		self.ball = None
+		self.collisions =set()
+		self.collision_callback = CollisionCallback(self)
+		self.world.contactListener = self.collision_callback
+
+	def spawn_ball(self, position = (0, 0), velocity = (0, -5)):
+		if self.ball is not None:
+			raise valueError("Attempt to spawn two balls.")
+		self.ball = physics_helper.create_body(self.world, shape_type = Box2D.b2CircleShape, position = position,
+		user_data = ObjectTypes.ball, body_type = Box2D.b2_dynamicBody, radius = self.ball_radius,
+		restitution = 1)
+		self.ball.linearVelocity = velocity
+
+	def tick(self):
+		"""Advances time by 1/60.0.
 		
+		This is not configurable; box2d steps have to be small."""
+		#Parameters:time, iterations for velocity, iterations for position.
+		self.world.Step(1/60.0, 10, 10)
