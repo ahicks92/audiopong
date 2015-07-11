@@ -25,7 +25,7 @@ class MainScreen(object):
 		self.environment.orientation = (0, 1, 0, 0, 0, 1)
 		self.environment.position = (0, -self.board.board_width/2, 0)
 		self.environment.connect_simulation(0)
-		self.board.spawn_ball()
+		self.board.spawn_ball(position = (-0.3, 0))
 
 	def tick(self, dt):
 		self.board.tick()

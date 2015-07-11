@@ -24,6 +24,7 @@ class CollisionCallback(Box2D.b2ContactListener):
 		a, b=contact.fixtureA.body.userData, contact.fixtureB.body.userData
 		if a > b:
 			a, b = b, a
+		print a, b, contact.worldManifold.points[0]
 		self.for_object.collisions[(a, b)] = contact.worldManifold.points[0]
 		self.for_object.per_tick_collisions[(a, b)] = contact.worldManifold.points[0]
 
@@ -55,6 +56,7 @@ class GameBoard(object):
 		self.world = Box2D.b2World()
 		#No gravity.
 		self.world.gravity = (0, 0)
+		self.world.SetAllowSleeping(False)
 		#Must be in counterclockwise ordering.
 		#these are set up so that the position of the paddle is relative to its back.
 		self.lower_paddle_vertices = [(-paddle_width/2, 0), (paddle_width/2, 0), (0, paddle_height)]
@@ -93,7 +95,8 @@ class GameBoard(object):
 			raise valueError("Attempt to spawn two balls.")
 		self.ball = physics_helper.create_body(self.world, shape_type = Box2D.b2CircleShape, position = position,
 		user_data = ObjectTypes.ball, body_type = Box2D.b2_dynamicBody, radius = self.ball_radius,
-		restitution = 1)
+		restitution = 1, friction = 0, density = 1000, linear_damping = 0,
+		fixed_rotation = True)
 		self.ball.linearVelocity = velocity
 
 	def tick(self):
@@ -103,4 +106,4 @@ class GameBoard(object):
 		#collisions is used to record ongoing; per_tick_collisions records all touches in one tick.
 		self.per_tick_collisions.clear()
 		#Parameters:time, iterations for velocity, iterations for position.
-		self.world.Step(1/60.0, 10, 10)
+		self.world.Step(1/60.0, 100, 100)
