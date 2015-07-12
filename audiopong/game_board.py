@@ -43,7 +43,7 @@ class GameBoard(object):
 	The paddles created by this class are triangular, such that the ball will not always reflect the same; with practice, a player can learn to manipulate the ball strategically."""
 	
 	
-	def __init__(self, board_width = 10, board_height = 30, dead_zone_height = 0.2, paddle_width = 1, paddle_height = 0.2, ball_radius = 0.05):
+	def __init__(self, board_width = 10, board_height = 30, dead_zone_height = 2, paddle_width = 1, paddle_height = 0.2, ball_radius = 0.05):
 		#This function keeps a lot of extra stuff around for debugging.
 		self.board_width = board_width
 		self.board_height = board_height
@@ -67,7 +67,7 @@ class GameBoard(object):
 		#This is the outer line of the board.
 		#The center of the board is at the origin.
 		#This constant is here for convenience.
-		#Balls are handled in spawn_ball, which should be called by user code; you can safely have more than one, but usually won't.
+		#Balls are handled in spawn_ball, which should be called by user code.
 		self.center = (0, 0)
 		self.border = physics_helper.create_body(self.world, shape_type = Box2D.b2ChainShape, body_type = Box2D.b2_staticBody, user_data = ObjectTypes.border,
 		vertices = physics_helper.box_vertices(board_width/2, board_height/2),
